@@ -36,26 +36,3 @@ func (store *Store) execTx(ctx context.Context, fn func(*Queries) error) error {
 
 	return tx.Commit()
 }
-
-func (store *Store) CreateDocumentWithTexts(
-	ctx context.Context,
-	docArg CreateDocumentParams,
-	texts []CreateExtractedTextParams,
-) error {
-	return store.execTx(ctx, func(q *Queries) error {
-		doc, err := q.CreateDocument(ctx, docArg)
-		if err != nil {
-			return err
-		}
-
-		for _, text := range texts {
-			text.DocumentID = doc.ID
-			if _, err := q.CreateExtractedText(ctx, text); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-}
-
