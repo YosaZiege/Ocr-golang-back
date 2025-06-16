@@ -12,7 +12,6 @@ import (
 const dbSource = "postgresql://root:root@localhost:5432/ocr-database?sslmode=disable"
 
 var testQueries *Queries
-var testStore *Store
 var testDB *pgxpool.Pool
 
 func TestMain(m *testing.M) {
@@ -23,14 +22,9 @@ func TestMain(m *testing.M) {
 	}
 
 	testQueries = New(testDB)
-	testStore = &Store{
-		db:      testDB,
-		Queries: testQueries,
-	}
 
 	code := m.Run()
 
 	testDB.Close()
 	os.Exit(code)
 }
-
