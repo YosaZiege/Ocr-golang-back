@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS extracted_texts
+DROP TABLE IF EXISTS documents
+DROP TABLE IF EXISTS users
