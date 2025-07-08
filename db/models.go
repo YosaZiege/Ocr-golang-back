@@ -23,6 +23,17 @@ type ExtractedText struct {
 	CreatedAt  pgtype.Timestamp `json:"created_at"`
 }
 
+type Session struct {
+	ID           pgtype.UUID      `json:"id"`
+	Username     string           `json:"username"`
+	RefreshToken string           `json:"refresh_token"`
+	UserAgent    string           `json:"user_agent"`
+	ClientIp     string           `json:"client_ip"`
+	IsBlocked    bool             `json:"is_blocked"`
+	ExpiresAt    pgtype.Timestamp `json:"expires_at"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+}
+
 type User struct {
 	Username     string           `json:"username"`
 	Email        string           `json:"email"`

@@ -15,6 +15,16 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
+func RandomString(length int) string {
+	rand.Seed(time.Now().UnixNano()) // seed once per call (simple usage)
+	result := make([]byte, length)
+	for i := range result {
+		index := rand.Intn(len(alphabet))
+		result[i] = alphabet[index]
+	}
+	return string(result)
+}
+
 // RandomInit generates a random integer between min and max
 func RandomInit(min, max int64) int64 {
 	return min + rand.Int63n(max-min+1)
