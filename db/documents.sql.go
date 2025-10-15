@@ -73,16 +73,17 @@ func (q *Queries) GetDocumentByID(ctx context.Context, id string) (Document, err
 const listDocumentsByUser = `-- name: ListDocumentsByUser :many
 SELECT id, user_id, filename, file_type, uploaded_at FROM documents
 WHERE user_id = $1
-ORDER BY uploaded_at DESC LIMIT $1 OFFSET $2
+ORDER BY uploaded_at DESC LIMIT $2 OFFSET $3
 `
 
 type ListDocumentsByUserParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
+	UserID string `json:"user_id"`
+	Limit  int32  `json:"limit"`
+	Offset int32  `json:"offset"`
 }
 
 func (q *Queries) ListDocumentsByUser(ctx context.Context, arg ListDocumentsByUserParams) ([]Document, error) {
-	rows, err := q.db.Query(ctx, listDocumentsByUser, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listDocumentsByUser, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

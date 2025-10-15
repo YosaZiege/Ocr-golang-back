@@ -10,7 +10,7 @@ WHERE id = $1;
 -- name: ListDocumentsByUser :many
 SELECT * FROM documents
 WHERE user_id = $1
-ORDER BY uploaded_at DESC LIMIT $1 OFFSET $2;
+ORDER BY uploaded_at DESC LIMIT $2 OFFSET $3;
 
 -- name: UpdateDocumentFilename :exec
 UPDATE documents

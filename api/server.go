@@ -31,8 +31,10 @@ func NewServer(config util.Config, queries *db.Queries) (*Server, error) {
 	router.POST("/users", server.CreateUserHandler)
 	router.POST("/users/login", server.LoginUser)
 	router.POST("/tokens/renew_access", server.renewAccessToken)
-	// authRoutes := router.Group("/").Use(authMiddleware(server.tokenMaker))
+	authRoutes := router.Group("/").Use(authMiddleware(server.tokenMaker))
 
+	authRoutes.POST("/documents/upload", server.UploadDocument)
+	authRoutes.GET("/documents", server.FetchDocuments)
 	server.router = router
 	return server, nil
 
