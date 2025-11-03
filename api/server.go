@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/yosa/ocr-golang-back/db"
 	"github.com/yosa/ocr-golang-back/token"
 	"github.com/yosa/ocr-golang-back/util"
@@ -27,12 +28,12 @@ func NewServer(config util.Config, queries *db.Queries) (*Server, error) {
 		tokenMaker: tokenMaker,
 	}
 	router := gin.Default()
-
+	// Users Endpoints
 	router.POST("/users", server.CreateUserHandler)
 	router.POST("/users/login", server.LoginUser)
 	router.POST("/tokens/renew_access", server.renewAccessToken)
 	authRoutes := router.Group("/").Use(authMiddleware(server.tokenMaker))
-
+	// Documents endpoint
 	authRoutes.POST("/documents/upload", server.UploadDocument)
 	authRoutes.GET("/documents", server.FetchDocuments)
 	server.router = router
