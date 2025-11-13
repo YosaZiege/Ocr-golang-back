@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -10,11 +11,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/otiai10/gosseract"
+
 	"github.com/yosa/ocr-golang-back/db"
 	"github.com/yosa/ocr-golang-back/token"
 )
@@ -39,40 +42,61 @@ func cleanupDocumentPNGs(docID string) {
 	}
 }
 
-// Extracts text and deletes each image even if OCR fails
-func extractTextFromPDFWithOCR(pdfPath, docID string) (string, error) {
+func extractTextFromPDFWithOCR(ctx context.Context, pdfPath, docID string) (string, error) {
 	if _, err := os.Stat(pdfPath); err != nil {
 		return "", fmt.Errorf("PDF file not found: %w", err)
 	}
 
 	outputPrefix := filepath.Join("uploads", fmt.Sprintf("%s_page", docID))
-	cmd := exec.Command("pdftoppm", "-png", pdfPath, outputPrefix)
+
+	// Add timeout for PDF conversion
+	convertCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(convertCtx, "pdftoppm", "-png", pdfPath, outputPrefix)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to convert pdf to images: %w (stderr: %s)", err, stderr.String())
+		return "", fmt.Errorf(
+			"failed to convert pdf to images: %w (stderr: %s)",
+			err,
+			stderr.String(),
+		)
+	}
+
+	// Find all generated images
+	images, err := filepath.Glob(fmt.Sprintf("%s-*.png", outputPrefix))
+	if err != nil {
+		return "", fmt.Errorf("failed to find images: %w", err)
+	}
+
+	if len(images) == 0 {
+		return "", fmt.Errorf("no images generated from PDF")
 	}
 
 	client := gosseract.NewClient()
 	defer client.Close()
 
+	// Configure Tesseract for better results
+	client.SetLanguage("eng")
+	client.SetPageSegMode(gosseract.PSM_AUTO) // Add this
+
 	var allText bytes.Buffer
 
-	for i := 1; i <= 50; i++ {
-		imgPath := fmt.Sprintf("%s-%d.png", outputPrefix, i)
-
-		if _, err := os.Stat(imgPath); err != nil {
-			break // No more pages
-		}
-
-		// Cleanup no matter what
+	for _, imgPath := range images {
+		// Clean up immediately after processing
 		defer os.Remove(imgPath)
 
-		client.SetImage(imgPath)
-		client.SetLanguage("eng")
+		if err := client.SetImage(imgPath); err != nil {
+			return "", fmt.Errorf("failed to set image %s: %w", imgPath, err)
+		}
+
 		text, err := client.Text()
 		if err != nil {
-			return "", fmt.Errorf("ocr error on page %d: %w", i, err)
+			// Consider: should one page failure fail the whole document?
+			// Or log and continue?
+			return "", fmt.Errorf("ocr error on %s: %w", imgPath, err)
 		}
 
 		allText.WriteString(text)
@@ -99,21 +123,30 @@ func (s *Server) UploadDocument(ctx *gin.Context) {
 	uploadPath := filepath.Join(uploadDir, fmt.Sprintf("%s.pdf", docID))
 
 	// 3. Ensure upload folder exists
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(fmt.Errorf("failed to create upload dir: %w", err)))
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		ctx.JSON(
+			http.StatusInternalServerError,
+			errorResponse(fmt.Errorf("failed to create upload dir: %w", err)),
+		)
 		return
 	}
 
 	// 4. Save PDF
 	outFile, err := os.Create(uploadPath)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(fmt.Errorf("failed to save file: %w", err)))
+		ctx.JSON(
+			http.StatusInternalServerError,
+			errorResponse(fmt.Errorf("failed to save file: %w", err)),
+		)
 		return
 	}
 	defer outFile.Close()
 
 	if _, err := io.Copy(outFile, file); err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(fmt.Errorf("failed to write file: %w", err)))
+		ctx.JSON(
+			http.StatusInternalServerError,
+			errorResponse(fmt.Errorf("failed to write file: %w", err)),
+		)
 		return
 	}
 
@@ -125,12 +158,15 @@ func (s *Server) UploadDocument(ctx *gin.Context) {
 		FileType: pgtype.Text{String: header.Header.Get("Content-Type"), Valid: true},
 	})
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(fmt.Errorf("failed to store document: %w", err)))
+		ctx.JSON(
+			http.StatusInternalServerError,
+			errorResponse(fmt.Errorf("failed to store document: %w", err)),
+		)
 		return
 	}
 
 	// 6. Extract OCR text
-	content, err := extractTextFromPDFWithOCR(uploadPath, docID)
+	content, err := extractTextFromPDFWithOCR(ctx.Request.Context(), uploadPath, docID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(fmt.Errorf("OCR failed: %w", err)))
 		return
@@ -147,7 +183,10 @@ func (s *Server) UploadDocument(ctx *gin.Context) {
 		Content:    pgtype.Text{String: content, Valid: true},
 	})
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(fmt.Errorf("failed to save extracted text: %w", err)))
+		ctx.JSON(
+			http.StatusInternalServerError,
+			errorResponse(fmt.Errorf("failed to save extracted text: %w", err)),
+		)
 		return
 	}
 
@@ -165,8 +204,8 @@ func (s *Server) UploadDocument(ctx *gin.Context) {
 
 type fetchDocumentsRequest struct {
 	Username string `json:"username" binding:"required"`
-	Limit    int32  `json:"limit" binding:"required"`
-	Offset   int32  `json:"offset" binding:"required"`
+	Limit    int32  `json:"limit"    binding:"required"`
+	Offset   int32  `json:"offset"   binding:"required"`
 }
 
 func (s *Server) FetchDocuments(ctx *gin.Context) {
@@ -181,7 +220,6 @@ func (s *Server) FetchDocuments(ctx *gin.Context) {
 		Limit:  req.Limit,
 		Offset: req.Offset,
 	})
-
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to Fetch Documents"})
 		return

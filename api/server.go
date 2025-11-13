@@ -38,7 +38,6 @@ func NewServer(config util.Config, queries *db.Queries) (*Server, error) {
 	authRoutes.GET("/documents", server.FetchDocuments)
 	server.router = router
 	return server, nil
-
 }
 
 func (s *Server) Start(address string) error {
